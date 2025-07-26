@@ -1,6 +1,6 @@
 Package: simulateDCE
 Title: Simulate Data for Discrete Choice Experiments
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: 
     person(given = "Julian", family = "Sagebiel", email = "julian.sagebiel@idiv.de", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-0253-6875"))
@@ -10,15 +10,16 @@ Encoding: UTF-8
 RoxygenNote: 7.3.2
 Imports: dplyr (>= 1.1.4), evd, formula.tools, ggplot2, kableExtra,
         magrittr, mixl, psych, purrr, readr, rmarkdown, stats, utils,
-        stringr, tibble, tictoc, tidyr, future, furrr, qs, data.table
+        stringr, tibble, tictoc, tidyr, future, furrr, qs, data.table,
+        glue
 Suggests: knitr, testthat (>= 3.0.0), rlang
 Config/testthat/edition: 3
 Depends: R (>= 4.1.0)
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2025-07-05 12:59:50 UTC; dj44vuri
+Packaged: 2025-07-26 16:56:10 UTC; dj44vuri
 Author: Julian Sagebiel [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-0253-6875>)
 Maintainer: Julian Sagebiel <julian.sagebiel@idiv.de>
 Repository: CRAN
-Date/Publication: 2025-07-09 10:30:02 UTC
+Date/Publication: 2025-07-26 17:10:02 UTC

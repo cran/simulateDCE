@@ -4,6 +4,7 @@
 #' @param no_sim Number of runs i.e. how often do you want the simulation to be repeated
 #' @param respondents Number of respondents. How many respondents do you want to simulate in each run.
 #' @param u A list with utility functions. The list can incorporate as many decision rule groups as you want. However, each group must be in a list in this list. If you just use one group (the normal),  this  group still  has to be in a list in  the u list. As a convention name beta coefficients starting with a lower case "b"
+#' @param estimate If TRUE models will be estimated. If false only a dataset will be simulated. Default is TRUE
 #' @inheritParams readdesign
 #' @inheritParams simulate_choices
 #' @param chunks The number of chunks determines how often results should be stored on disk as a safety measure to not loose simulations if models have already been estimated. For example, if no_sim is 100 and chunks = 2, the data will be saved on disk after 50 and after 100 runs.
@@ -275,7 +276,7 @@ sim_choice <- function(designfile, no_sim = 10, respondents = 330, u,
               data = sim_data[[.x]]
             )
           )
-        tictoc::toc()
+        message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
 
         chunkfilename <- paste0(dname, "_tmp_", i, ".qs")
 
@@ -319,7 +320,7 @@ sim_choice <- function(designfile, no_sim = 10, respondents = 330, u,
           data = .x
         )
       )
-      tictoc::toc()
+      message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
     }
 
 

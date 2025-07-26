@@ -6,7 +6,6 @@
 #' @param bcoeff List of initial coefficients for the utility function. List content/length can vary based on application. I ideally begins (but does not have to) with b and need be the same as those entered in the utility functions
 #' @param decisiongroups A vector showing how decision groups are numerically distributed
 #' @param manipulations A variable to alter terms of the utility functions examples may be applying a factor or applying changes to terms selectively for different groups
-#' @param estimate If TRUE models will be estimated. If false only a dataset will be simulated. Default is true
 #' @param preprocess_function = NULL You can supply a function that reads in external data (e.g. GIS coordinates) that will be merged with the simulated dataset. Make sure the the function outputs a data.frame that has a variable called ID which is used for matching.
 #' @return a data.frame that includes simulated choices and a design
 #' @export
@@ -29,9 +28,9 @@
 #'     v2 = V.2 ~ 0
 #'   )
 #' )
-#' simulate_choices(example_df, ut, setspp = 4, bcoeff = beta, estimate = FALSE)
+#' simulate_choices(example_df, ut, setspp = 4, bcoeff = beta)
 #'
-simulate_choices <- function(data, utility, setspp, bcoeff, decisiongroups = c(0, 1), manipulations = list(), estimate, preprocess_function = NULL) { # the part in dataset that needs to be repeated in each run
+simulate_choices <- function(data, utility, setspp, bcoeff, decisiongroups = c(0, 1), manipulations = list(),  preprocess_function = NULL) { # the part in dataset that needs to be repeated in each run
 
   if (!is.null(preprocess_function)) {
     if (!is.function(preprocess_function)) {
@@ -48,21 +47,41 @@ simulate_choices <- function(data, utility, setspp, bcoeff, decisiongroups = c(0
     message("\n No preprocess function provided. Proceeding without additional preprocessing.\n")
   }
 
+
+  # Check 1: user specified multiple decision groups
+  if (length(decisiongroups) > 2 && length(utility) != (length(decisiongroups) - 1)) {
+    stop(glue::glue(
+      "Length of `utility` ({length(utility)}) does not match number of decision groups ",
+      "defined by `decisiongroups` ({length(decisiongroups) - 1})."
+    ))
+  }
+
   tictoc::tic("whole simulate choices")
 
-  tictoc::tic("assign keys for bcoeff)")
+  tictoc::tic("assign keys for bcoeff")
   ### unpack the bcoeff list so variables are accessible
   for (key in names(bcoeff)) {
     assign(key, bcoeff[[key]])
   }
 
-  tictoc::toc()
+  message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
 
-
-  by_formula <- function(equation) { # used to take formulas as inputs in simulation utility function
-    dplyr::pick(dplyr::everything()) |>
-      dplyr::transmute(!!formula.tools::lhs(equation) := !!formula.tools::rhs(equation))
+### new functions to calculate utility
+  compile_one <- function(fm) {
+    name <- as.character(formula.tools::lhs(fm))
+    rhs  <- formula.tools::rhs(fm)
+    fn   <- eval(bquote(function(d) with(d, .(rhs))))
+    list(name = name, fun = compiler::cmpfun(fn))
   }
+
+  compile_utility_list <- function(u) {
+    lapply(u, function(fl) {
+      tmp <- lapply(fl, compile_one)
+      stats::setNames(lapply(tmp, `[[`, "fun"),
+               vapply(tmp, `[[`, "", "name"))
+    })
+  }
+
 
 
 
@@ -93,56 +112,65 @@ simulate_choices <- function(data, utility, setspp, bcoeff, decisiongroups = c(0
     data$group <- 1
   }
 
+  ### give an error if things did not work out
+
+  if (any(!unique(data$group) %in% seq_along(utility))) {
+    stop("Mismatch: data includes group IDs not covered by the utility list.")
+  }
+
   tictoc::tic("user entered manipulations")
 
   ## Do user entered manipulations to choice set
   data <- data %>%
     dplyr::group_by(ID) %>%
     dplyr::mutate(!!!manipulations)
-  tictoc::toc()
+  message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
 
-  #   browser()
-  #
-  # d2 <- as.data.table(data)
-  #
-  # lhs <- as.character(formula.tools::lhs(utility$u1$v1))
-  # rhs <- as.character(formula.tools::rhs(utility$u1$v1))
-  # d2<- d2[, (lhs) := eval(parse(text = rhs))]
-
-  tictoc::tic("split dataframe into groups")
-  ## split dataframe into groups
-  subsets <- split(data, data$group)
-
-  tictoc::toc()
 
   tictoc::tic("for each group calculate utility")
-  ## for each group calculate utility
-  subsets <- purrr::map2(
-    .x = seq_along(utility), .y = subsets,
-    ~ dplyr::mutate(.y, purrr::map_dfc(utility[[.x]], by_formula))
-  )
 
-  ## put data from eachgroup together again
-  data <- dplyr::bind_rows(subsets)
-  tictoc::toc()
+
+  ufuns <- compile_utility_list(utility)
+
+  dt <- data.table::as.data.table(data)
+
+
+
+  all_vars <- unique(unlist(lapply(utility, function(fl) {
+    unlist(lapply(fl, function(fm) all.vars(formula.tools::rhs(fm))))
+  })))
+  sdcols <- intersect(all_vars, names(dt))
+
+
+  varn <- names(ufuns[[1]])
+
+  dt[
+    ,
+    (varn) := lapply(ufuns[[.GRP]], function(f) f(.SD)),
+    by = group,
+    .SDcols = sdcols
+  ]
+
+
+
+
 
   tictoc::tic("add random component")
   ## add random component and calculate total utility
-  data <- data %>%
+  data <- dt %>%
     dplyr::ungroup() %>%
     dplyr::rename_with(~ stringr::str_replace_all(., pattern = "\\.", "_"), tidyr::everything()) %>%
     dplyr::mutate(
       dplyr::across(.cols = dplyr::all_of(n), .fns = ~ evd::rgumbel(dplyr::n(), loc = 0, scale = 1), .names = "{'e'}_{n}"),
       dplyr::across(dplyr::starts_with("V_"), .names = "{'U'}_{n}") + dplyr::across(dplyr::starts_with("e_"))
-    ) %>%
-    dplyr::ungroup() %>%
-    dplyr::mutate(CHOICE = max.col(.[, grep("U_", names(.))])) %>%
-    as.data.frame()
+    )  %>%
+    as.data.frame() %>%
+    dplyr::mutate(CHOICE = max.col(.[, grep("U_", names(.))]))
 
 
-  tictoc::toc()
+  message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
 
-  tictoc::toc()
+  message( utils::capture.output(tictoc::toc(log = FALSE, quiet = TRUE)) )
 
   message("\n data has been created \n")
 
